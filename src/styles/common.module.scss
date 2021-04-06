@@ -1,0 +1,40 @@
+.container {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0 2rem;
+
+  .info {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    line-height: 2rem;
+    margin-top: 1rem;
+
+    svg {
+      width: 20px;
+      height: 20px;
+      color: var(--info);
+    }
+
+    time {
+      display: block;
+      font-size: 0.875rem;
+      color: var(--info);
+      margin: 0 1.25rem 0 0.5rem;
+    }
+
+    .name {
+      display: block;
+      font-size: 0.875rem;
+      color: var(--info);
+      margin: 0 1.25rem 0 0.5rem;
+    }
+
+    .clock {
+      display: block;
+      font-size: 0.875rem;
+      color: var(--info);
+      margin: 0 1.25rem 0 0.5rem;
+    }
+  }
+}
