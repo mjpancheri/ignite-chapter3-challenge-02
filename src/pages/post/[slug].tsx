@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { GetStaticPaths, GetStaticProps } from 'next';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import Prismic from '@prismicio/client';
 import { RichText } from 'prismic-dom';
@@ -8,13 +9,16 @@ import { FiCalendar, FiClock, FiUser } from 'react-icons/fi';
 
 import { getPrismicClient } from '../../services/prismic';
 import Header from '../../components/Header';
-import { formatDate } from '..';
+import Comments from '../../components/Comments';
+import { formatDate, formatDateTime } from '..';
 
 import commonStyles from '../../styles/common.module.scss';
 import styles from './post.module.scss';
 
 interface Post {
+  uid: string;
   first_publication_date: string | null;
+  last_publication_date: string | null;
   data: {
     title: string;
     banner: {
@@ -23,17 +27,36 @@ interface Post {
     author: string;
     content: {
       heading: string;
-      body: string;
-      text: string;
+      body: {
+        text: string;
+      }[];
     }[];
   };
 }
-
 interface PostProps {
   post: Post;
+  navigation: {
+    prevPost: {
+      uid: string;
+      data: {
+        title: string;
+      };
+    }[];
+    nextPost: {
+      uid: string;
+      data: {
+        title: string;
+      };
+    }[];
+  };
+  preview: boolean;
 }
 
-export default function Post({ post }: PostProps): JSX.Element {
+export default function Post({
+  post,
+  navigation,
+  preview,
+}: PostProps): JSX.Element {
   const { isFallback } = useRouter();
 
   const timeToRead = useMemo(() => {
@@ -43,7 +66,7 @@ export default function Post({ post }: PostProps): JSX.Element {
 
     const words = post.data.content
       .reduce((acc, item) => {
-        return acc + item.heading + item.text;
+        return acc + item.heading + RichText.asText(item.body);
       }, '')
       .split(/ /g);
 
@@ -62,7 +85,7 @@ export default function Post({ post }: PostProps): JSX.Element {
   return (
     <>
       <Head>
-        <title>Post | Spacetraveling.</title>
+        <title>{post.data.title} | Spacetraveling.</title>
       </Head>
 
       <Header />
@@ -83,18 +106,63 @@ export default function Post({ post }: PostProps): JSX.Element {
               {timeToRead > 0 ? `${timeToRead} min` : 'calculando...'}
             </span>
           </div>
+          {post.last_publication_date &&
+            post.last_publication_date > post.first_publication_date && (
+              <p className={commonStyles.edit}>
+                {`* editado em ${formatDateTime(post.last_publication_date)}`}
+              </p>
+            )}
           {post.data.content.map(content => (
             <article key={getUniqueKey('_c')}>
               <h2>{content.heading}</h2>
               <div
                 key={getUniqueKey('_b')}
                 // eslint-disable-next-line react/no-danger
-                dangerouslySetInnerHTML={{ __html: content.body }}
+                dangerouslySetInnerHTML={{
+                  __html: RichText.asHtml(content.body),
+                }}
               />
             </article>
           ))}
         </div>
       </main>
+      <footer className={styles.footer}>
+        <div className={styles.navigation}>
+          {navigation?.prevPost.length > 0 ? (
+            <Link href={`/post/${navigation.prevPost[0].uid}`}>
+              <a className={styles.prev}>
+                {navigation.prevPost[0].data.title.length > 35
+                  ? `${navigation.prevPost[0].data.title.substring(0, 33)}...`
+                  : navigation.prevPost[0].data.title}
+                <p>Post anterior</p>
+              </a>
+            </Link>
+          ) : (
+            <div />
+          )}
+          {navigation?.nextPost.length > 0 ? (
+            <Link href={`/post/${navigation.nextPost[0].uid}`}>
+              <a className={styles.next}>
+                {navigation.nextPost[0].data.title.length > 35
+                  ? `${navigation.nextPost[0].data.title.substring(0, 33)}...`
+                  : navigation.nextPost[0].data.title}
+                <p>Próximo post</p>
+              </a>
+            </Link>
+          ) : (
+            <div />
+          )}
+        </div>
+
+        <Comments />
+        {preview && (
+          <aside className={commonStyles.exit_preview}>
+            <Link href="/api/exit-preview">
+              <a>Sair do modo Preview</a>
+            </Link>
+          </aside>
+        )}
+      </footer>
     </>
   );
 }
@@ -104,7 +172,8 @@ export const getStaticPaths: GetStaticPaths = async () => {
   const posts = await prismic.query(
     [Prismic.predicates.at('document.type', 'posts')],
     {
-      pageSize: 1,
+      fetch: ['posts.uid'],
+      // pageSize: 1,
     }
   );
 
@@ -117,27 +186,51 @@ export const getStaticPaths: GetStaticPaths = async () => {
   };
 };
 
-export const getStaticProps: GetStaticProps = async ({ params }) => {
+export const getStaticProps: GetStaticProps = async ({
+  params,
+  preview = false,
+  previewData,
+}) => {
   const { slug } = params;
   const prismic = getPrismicClient();
-  const response = await prismic.getByUID('posts', String(slug), {});
+  const response = await prismic.getByUID('posts', String(slug), {
+    ref: previewData?.ref || null,
+  });
+
+  const prevPost = await prismic.query(
+    [Prismic.predicates.at('document.type', 'posts')],
+    {
+      pageSize: 1,
+      after: response.id,
+      orderings: '[document.last_publication_date desc]',
+    }
+  );
+
+  const nextPost = await prismic.query(
+    [Prismic.predicates.at('document.type', 'posts')],
+    {
+      pageSize: 1,
+      after: response.id,
+      orderings: '[document.last_publication_date]',
+    }
+  );
 
   const post = {
+    uid: response.uid,
     first_publication_date: response.first_publication_date,
-    ...response, // Faço o spread aqui
-
+    last_publication_date: response.last_publication_date,
     data: {
-      ...response.data, // E aqui também
       title: response.data.title,
-      banner: response.data.banner,
+      subtitle: response.data.subtitle,
       author: response.data.author,
-
-      content: response.data.content.map(item => {
-        // eslint-disable-next-line no-param-reassign
-        item.text = RichText.asText(item.body);
-        // eslint-disable-next-line no-param-reassign
-        item.body = RichText.asHtml(item.body);
-        return item;
+      banner: {
+        url: response.data.banner.url,
+      },
+      content: response.data.content.map(content => {
+        return {
+          heading: content.heading,
+          body: [...content.body],
+        };
       }),
     },
   };
@@ -145,6 +238,11 @@ export const getStaticProps: GetStaticProps = async ({ params }) => {
   return {
     props: {
       post,
+      navigation: {
+        prevPost: prevPost?.results,
+        nextPost: nextPost?.results,
+      },
+      preview,
     },
     revalidate: 60 * 60 * 24, // 1 dia
   };

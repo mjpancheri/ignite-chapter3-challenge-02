@@ -30,6 +30,7 @@ interface PostPagination {
 
 interface HomeProps {
   postsPagination: PostPagination;
+  preview: boolean;
 }
 
 export function formatDate(date: string): string {
@@ -38,7 +39,16 @@ export function formatDate(date: string): string {
   });
 }
 
-export default function Home({ postsPagination }: HomeProps): JSX.Element {
+export function formatDateTime(date: string): string {
+  return format(new Date(date), "d MMM yyyy, 'às' HH:mm", {
+    locale: ptBR,
+  });
+}
+
+export default function Home({
+  postsPagination,
+  preview,
+}: HomeProps): JSX.Element {
   const [nextPage, setNextPage] = useState(postsPagination.next_page);
   const [posts, setPosts] = useState(postsPagination.results);
 
@@ -46,6 +56,7 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
     fetch(nextPage)
       .then(response => response.json())
       .then(data => {
+        // console.log(data.prev_page, data.next_page);
         const { next_page, results } = data;
 
         const newPosts = results.map(post => {
@@ -90,6 +101,8 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
             </Link>
           </div>
         ))}
+      </main>
+      <footer className={styles.footer}>
         {nextPage && (
           <button
             className={styles.load_more}
@@ -99,18 +112,30 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
             Carregar mais posts
           </button>
         )}
-      </main>
+        {preview && (
+          <aside className={commonStyles.exit_preview}>
+            <Link href="/api/exit-preview">
+              <a>Sair do modo Preview</a>
+            </Link>
+          </aside>
+        )}
+      </footer>
     </>
   );
 }
 
-export const getStaticProps: GetStaticProps = async () => {
+export const getStaticProps: GetStaticProps = async ({
+  preview = false,
+  previewData,
+}) => {
   const prismic = getPrismicClient();
   const postsResponse = await prismic.query(
     [Prismic.predicates.at('document.type', 'posts')],
     {
       fetch: ['posts.title', 'posts.subtitle', 'posts.author'],
+      ref: previewData?.ref ?? null,
       pageSize: 1,
+      orderings: '[document.last_publication_date]',
     }
   );
 
@@ -132,6 +157,7 @@ export const getStaticProps: GetStaticProps = async () => {
         next_page: postsResponse.next_page,
         results: posts,
       },
+      preview,
     },
   };
 };
